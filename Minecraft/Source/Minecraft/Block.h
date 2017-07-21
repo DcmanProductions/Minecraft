@@ -9,8 +9,8 @@ UCLASS()
 class MINECRAFT_API ABlock : public AActor
 {
 	GENERATED_BODY()
-	
-public:	
+
+public:
 	// Sets default values for this actor's properties
 	ABlock();
 
@@ -19,6 +19,20 @@ public:
 
 	UPROPERTY(EditDefaultsOnly)
 		UStaticMeshComponent* SM_Block;
-	
-	
+
+	int32 MiniumMaterial;
+
+	UPROPERTY(EditDefaultsOnly)
+		float Resistance;
+	UPROPERTY(BlueprintReadWrite)
+		float BreakingStage;
+
+	//Called Everytime we want to break the block further
+	void Break();
+
+	void ResetBlock();
+
+	//Called once the block has hit the final breaking stage
+	void OnBroken(bool HasRequiredPickaxe);
+
 };

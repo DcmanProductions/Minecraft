@@ -13,6 +13,89 @@ DEFINE_LOG_CATEGORY_STATIC(LogFPChar, Warning, All);
 //////////////////////////////////////////////////////////////////////////
 // AMinecraftCharacter
 
+void AMinecraftCharacter::OnHit()
+{
+
+	PlayHitAnim();
+
+	if (CurrentBlock != nullptr)
+	{
+		bIsBreaking = true;
+
+		float TimeBetweenBreaks = ((CurrentBlock->Resistance) / 100.0f) / 2;
+
+		GetWorld()->GetTimerManager().SetTimer(BlockBreakingHandle, this, &AMinecraftCharacter::BreakBlock, TimeBetweenBreaks, true);
+		GetWorld()->GetTimerManager().SetTimer(HitAnimHandle, this, &AMinecraftCharacter::PlayHitAnim, 0.4f, true);
+	}
+
+}
+
+void AMinecraftCharacter::EndHit()
+{
+
+	GetWorld()->GetTimerManager().ClearTimer(BlockBreakingHandle);
+	GetWorld()->GetTimerManager().ClearTimer(HitAnimHandle);
+
+	bIsBreaking = false;
+
+	if (CurrentBlock != nullptr)
+	{
+		CurrentBlock->ResetBlock();
+	}
+
+
+}
+
+void AMinecraftCharacter::PlayHitAnim()
+{
+	// try and play a firing animation if specified
+	if (FireAnimation != NULL)
+	{
+		// Get the animation object for the arms mesh
+		UAnimInstance* AnimInstance = Mesh1P->GetAnimInstance();
+		if (AnimInstance != NULL)
+		{
+			AnimInstance->Montage_Play(FireAnimation, 1.f);
+		}
+	}
+}
+
+void AMinecraftCharacter::BreakBlock()
+{
+
+	if (bIsBreaking && CurrentBlock != nullptr&&CurrentBlock->IsPendingKill())
+	{
+		CurrentBlock->Break();
+	}
+
+}
+
+void AMinecraftCharacter::CheckForBlocks()
+{
+
+	FHitResult lineTraceHit;
+
+	FVector StartTrace = FirstPersonCameraComponent->GetComponentLocation();
+	FVector EndTrace = (FirstPersonCameraComponent->GetForwardVector() * Reach) + StartTrace;
+
+	FCollisionQueryParams CQP;
+	CQP.AddIgnoredActor(this);
+
+	GetWorld()->LineTraceSingleByChannel(lineTraceHit, StartTrace, EndTrace, ECollisionChannel::ECC_WorldDynamic, CQP);
+	ABlock* PotentialBlock = Cast<ABlock>(lineTraceHit.GetActor());
+
+	if (PotentialBlock != NULL)
+	{
+		CurrentBlock = nullptr;
+		return;
+	}
+	else
+	{
+		CurrentBlock = PotentialBlock;
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, *CurrentBlock->GetName());
+	}
+}
+
 AMinecraftCharacter::AMinecraftCharacter()
 {
 	// Set size for collision capsule
@@ -21,6 +104,9 @@ AMinecraftCharacter::AMinecraftCharacter()
 	// set our turn rates for input
 	BaseTurnRate = 45.f;
 	BaseLookUpRate = 45.f;
+
+	//Initilize Reach
+	Reach = 250.0f;
 
 	// Create a CameraComponent	
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
@@ -101,6 +187,14 @@ void AMinecraftCharacter::BeginPlay()
 	}
 }
 
+void AMinecraftCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	CheckForBlocks();
+
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Input
 
@@ -115,7 +209,8 @@ void AMinecraftCharacter::SetupPlayerInputComponent(class UInputComponent* Playe
 	//InputComponent->BindTouch(EInputEvent::IE_Pressed, this, &AMinecraftCharacter::TouchStarted);
 	if (EnableTouchscreenMovement(PlayerInputComponent) == false)
 	{
-		PlayerInputComponent->BindAction("Fire", IE_Pressed, this, &AMinecraftCharacter::OnFire);
+		InputComponent->BindAction("Interact", IE_Pressed, this, &AMinecraftCharacter::OnHit);
+		InputComponent->BindAction("Interact", IE_Released, this, &AMinecraftCharacter::EndHit);
 	}
 
 	PlayerInputComponent->BindAction("ResetVR", IE_Pressed, this, &AMinecraftCharacter::OnResetVR);
@@ -134,40 +229,6 @@ void AMinecraftCharacter::SetupPlayerInputComponent(class UInputComponent* Playe
 
 void AMinecraftCharacter::OnFire()
 {
-	// try and fire a projectile
-	if (ProjectileClass != NULL)
-	{
-		UWorld* const World = GetWorld();
-		if (World != NULL)
-		{
-			if (bUsingMotionControllers)
-			{
-				const FRotator SpawnRotation = VR_MuzzleLocation->GetComponentRotation();
-				const FVector SpawnLocation = VR_MuzzleLocation->GetComponentLocation();
-				World->SpawnActor<AMinecraftProjectile>(ProjectileClass, SpawnLocation, SpawnRotation);
-			}
-			else
-			{
-				const FRotator SpawnRotation = GetControlRotation();
-				// MuzzleOffset is in camera space, so transform it to world space before offsetting from the character location to find the final muzzle position
-				const FVector SpawnLocation = ((FP_MuzzleLocation != nullptr) ? FP_MuzzleLocation->GetComponentLocation() : GetActorLocation()) + SpawnRotation.RotateVector(GunOffset);
-
-				//Set Spawn Collision Handling Override
-				FActorSpawnParameters ActorSpawnParams;
-				ActorSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButDontSpawnIfColliding;
-
-				// spawn the projectile at the muzzle
-				World->SpawnActor<AMinecraftProjectile>(ProjectileClass, SpawnLocation, SpawnRotation, ActorSpawnParams);
-			}
-		}
-	}
-
-	// try and play the sound if specified
-	if (FireSound != NULL)
-	{
-		UGameplayStatics::PlaySoundAtLocation(this, FireSound, GetActorLocation());
-	}
-
 	// try and play a firing animation if specified
 	if (FireAnimation != NULL)
 	{
